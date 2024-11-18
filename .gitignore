@@ -1,0 +1,9 @@
+# Ignore Firebase private key
+/config/service-account-key.json
+
+# Ignore node_modules
+/node_modules
+
+# Ignore environment variables
+.env
+
