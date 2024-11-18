@@ -1,9 +1,11 @@
-# Ignore Firebase private key
+# macOS system files
+.DS_Store
+
+# Node.js dependencies
+node_modules/
+
+# Firebase private key
 /config/service-account-key.json
 
-# Ignore node_modules
-/node_modules
-
-# Ignore environment variables
+# Environment variables
 .env
-
