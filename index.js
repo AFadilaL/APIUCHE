@@ -4,6 +4,8 @@ const express = require('express');
 const bodyParser = require('body-parser');
 const admin = require('firebase-admin');
 const axios = require('axios');
+require('dotenv').config();
+
 
 // Initialize Express
 const app = express();
@@ -18,7 +20,7 @@ admin.initializeApp({
 
 const db = admin.firestore();
 // Klaviyo API Key
-const KLAVIYO_API_KEY = 'TKmV8y';
+const KLAVIYO_API_KEY = process.env.KLAVIYO_API_KEY;
 
 // Webhook Endpoint
 app.post('/webhook', async (req, res) => {
@@ -93,7 +95,7 @@ app.post('/webhook', async (req, res) => {
     });
     // Step 4: Send data to Klaviyo
     const klaviyoPayload = {
-      api_key: TKmV8y,
+      api_key: KLAVIYO_API_KEY,
       profiles: [ {
         client_email : email, 
         first_name: firstName, 
