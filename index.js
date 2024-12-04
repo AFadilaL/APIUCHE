@@ -1,68 +1,130 @@
-const express = require("express");
-const axios = require("axios");
-const admin = require("firebase-admin");
+
+
+const express = require('express');
+const bodyParser = require('body-parser');
+const admin = require('firebase-admin');
+const axios = require('axios');
+
+// Initialize Express
 const app = express();
-const port = 3000;
+app.use(bodyParser.json());
 
-// Initialize Firebase Admin SDK
-const serviceAccount = require("./config/service-account-key.json");
-
+// Firebase Initialization
+const serviceAccount = require('./config/service-account-key.json'); // acesses the service account in folder config
 admin.initializeApp({
   credential: admin.credential.cert(serviceAccount),
+  projectId: 'uche-hq' // Replace with your Firebase URL
 });
 
 const db = admin.firestore();
+// Klaviyo API Key
+const KLAVIYO_API_KEY = 'TKmV8y';
 
-app.use(express.json());
-
-// API Endpoint
-app.post("/sendToKlaviyo", async (req, res) => {
-  const { userId, sessionId } = req.body;
-
+// Webhook Endpoint
+app.post('/webhook', async (req, res) => {
   try {
-    // Retrieve user data from Firestore
-    const userRef = db.collection("recomended_log").doc("user");
-    const userData = (await userRef.get()).data();
-    const outputDataRef = db.collection("recomended_log").doc("outputData");
-    const outputData = (await outputDataRef.get()).data();
+    // Step 1: Retrieve data from webhook payload
+    const { userid, sessionid, hairstyle } = req.body;
 
-    // Extract user details
-    const email = userData.email;
-    const firstName = userData.firstName;
+    if (!userid || !sessionid || !hairstyle) {
+      return res.status(400).json({ error: 'Missing required fields in webhook payload.' });
+    }
 
-    // Extract product details
-    const products = Object.keys(outputData).map((key) => {
-      return {
-        brand_name: outputData[key].brand_name,
-        product_name: outputData[key].product_name,
-        image_url: outputData[key].image_url,
-        product_url: outputData[key].product_url,
-        message_1: outputData[key].message_1,
-      };
+    // Step 2: Search Firestore collection
+    const collectionRef = db.collection('recommended_log');
+    const snapshot = await collectionRef.get();
+    if (snapshot.empty) {
+      return res.status(404).json({ error: 'No documents found in recommended_log collection.' });
+    }
+
+    let matchingDocument = null;
+// Compares if the webhook data matches the recommonded_log data and stores it in matchingDocument if it is true
+    snapshot.forEach((doc) => {
+      const data = doc.data();
+      if (
+        data.userid === userid &&
+        data.sessionid === sessionid &&
+        data.hairstyle === hairstyle
+      ) {
+        matchingDocument = data;
+      }
     });
+//error hab=ndling for no matching doc found 
+    if (!matchingDocument) {
+      return res.status(404).json({ error: 'No matching document found.' });
+    }
+//cont outputDatamap = matchingDocument.outputData 
+//
+    // Step 3: Access user map in the document
+    const userMap = matchingDocument.user;
+    if (!userMap || !userMap.FirstName || !userMap.email) {
+      return res.status(500).json({ error: 'User map is missing required fields.' });
+    }
 
-    // Prepare payload for Klaviyo
-    const payload = {
-      email,
-      firstName,
-      sessionId,
-      products,
+    const firstName = userMap.FirstName;
+    const email = userMap.email;
+
+    // Step 4: Fetch the product data from the outputData array
+    const outputData = matchingDocument.data().outputData;
+    if (!outputData || !Array.isArray(outputData)) {
+      return res.status(500).json({ error: 'outputData is missing or not an array.' });
+    }
+
+    // Initialize an array to store all the products
+    const products = [];
+
+    // Iterate over each map inside the outputData array
+    outputData.forEach((item) => {
+      const product = item.product; // Access the product map inside each item
+
+      // Ensure the product map exists
+      if (product) {
+        // Fetch the necessary fields from the product map
+        const productData = {
+          brand_name: product.brand_name || '',
+          product_name: product.product_name || '',
+          image_url: product.image_url || '',
+          product_url: product.product_url || '',
+          message_1: product.message_1 || ''
+        };
+// Add the product data to the products array
+        products.push(productData);
+      }
+    });
+    // Step 4: Send data to Klaviyo
+    const klaviyoPayload = {
+      api_key: TKmV8y,
+      profiles: [ {
+        client_email : email, 
+        first_name: firstName, 
+        products: products // Include the products array (brand_name, product_name , image_url, product_url, message_1)
+      }]
     };
 
-    // Send payload to Klaviyo
-    await axios.post("https://a.klaviyo.com/api/v1/endpoint", payload, {
-      headers: {
-        Authorization: `Bearer TKmV8y`,
-      },
-    });
+    const klaviyoResponse = await axios.post(
+      'https://a.klaviyo.com/api/v2/people',
+      klaviyoPayload
+    );
 
-    res.status(200).send("Data sent to Klaviyo successfully!");
+    if (klaviyoResponse.status === 200) {
+      await matchingDocument.ref.update({ emailsent: true });
+      return res.json({ message: 'Data sent to Klaviyo successfully.', klaviyoResponse: klaviyoResponse.data });
+    } else {
+      throw new Error('Failed to send data to Klaviyo.');
+    }
   } catch (error) {
-    console.error("Error sending data:", error);
-    res.status(500).send("An error occurred.");
+    console.error('Error:', error);
+    res.status(500).json({ error: error.message });
   }
 });
 
-app.listen(port, () => {
-  console.log(`Server running at http://localhost:${port}`);
+// Start the server
+const PORT = process.env.PORT || 3000;
+app.listen(PORT, () => {
+  console.log(`Server is running on port ${PORT}`);
 });
+
+
+
+
+
